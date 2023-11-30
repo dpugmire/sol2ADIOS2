@@ -1,0 +1,133 @@
+{
+  "HPMUSIC": {
+    "data_sources": [
+      {
+      "name": "source",
+      "filename_mode": "input"
+      }
+    ],
+    "coordinate_system" : {
+      "array" : {
+        "array_type" : "composite",
+        "x_array" : {
+          "array_type" : "basic",
+          "data_source": "source",
+          "variable" : "/hpMusic_base/hpMusic_Zone/GridCoordinates/CoordinateX"
+          },
+        "y_array" : {
+          "array_type" : "basic",
+          "data_source": "source",
+          "variable" : "/hpMusic_base/hpMusic_Zone/GridCoordinates/CoordinateY"
+          },
+        "z_array" : {
+          "array_type" : "basic",
+          "data_source": "source",
+          "variable" : "/hpMusic_base/hpMusic_Zone/GridCoordinates/CoordinateZ"
+          }
+      }
+    },
+    "cell_set": {
+      "cell_set_type" : "single_type",
+      "cell_type" : "hexahedron",
+      "data_source": "source",
+      "variable" : "/hpMusic_base/hpMusic_Zone/Elem/ElementConnectivity"
+    },
+    "fields": [
+      {
+        "name": "Density",
+        "association": "points",
+        "array" : {
+          "array_type" : "basic",
+          "data_source": "source",
+          "variable" : "/hpMusic_base/hpMusic_Zone/FlowSolution/Density"
+        }
+      },
+      {
+        "name": "Pressure",
+        "association": "points",
+        "array" : {
+          "array_type" : "basic",
+          "data_source": "source",
+          "variable" : "/hpMusic_base/hpMusic_Zone/FlowSolution/Pressure"
+        }
+      },
+      {
+        "name": "Q_CRITERIA",
+        "association": "points",
+        "array" : {
+          "array_type" : "basic",
+          "data_source": "source",
+          "variable" : "/hpMusic_base/hpMusic_Zone/FlowSolution/Q_CRITERIA"
+        }
+      },
+      {
+        "name": "SCHLIEREN",
+        "association": "points",
+        "array" : {
+          "array_type" : "basic",
+          "data_source": "source",
+          "variable" : "/hpMusic_base/hpMusic_Zone/FlowSolution/SCHLIEREN"
+        }
+      },
+      {
+        "name": "VelocityX",
+        "association": "points",
+        "array" : {
+          "array_type" : "basic",
+          "data_source": "source",
+          "variable" : "/hpMusic_base/hpMusic_Zone/FlowSolution/VelocityX"
+        }
+      },
+      {
+        "name": "VelocityY",
+        "association": "points",
+        "array" : {
+          "array_type" : "basic",
+          "data_source": "source",
+          "variable" : "/hpMusic_base/hpMusic_Zone/FlowSolution/VelocityY"
+        }
+      },
+      {
+        "name": "VelocityZ",
+        "association": "points",
+        "array" : {
+          "array_type" : "basic",
+          "data_source": "source",
+          "variable" : "/hpMusic_base/hpMusic_Zone/FlowSolution/VelocityZ"
+        }
+      },
+      {
+        "name": "vort_x",
+        "association": "points",
+        "array" : {
+          "array_type" : "basic",
+          "data_source": "source",
+          "variable" : "/hpMusic_base/hpMusic_Zone/FlowSolution/vort_x"
+        }
+      },
+      {
+        "name": "vort_y",
+        "association": "points",
+        "array" : {
+          "array_type" : "basic",
+          "data_source": "source",
+          "variable" : "/hpMusic_base/hpMusic_Zone/FlowSolution/vort_y"
+        }
+      },
+      {
+        "name": "vort_z",
+        "association": "points",
+        "array" : {
+          "array_type" : "basic",
+          "data_source": "source",
+          "variable" : "/hpMusic_base/hpMusic_Zone/FlowSolution/vort_z"
+        }
+      }
+    ],
+    "step_information": {
+      "data_source": "source",
+      "variable": "/hpMusic_base/time"
+    }
+  }
+}
+
