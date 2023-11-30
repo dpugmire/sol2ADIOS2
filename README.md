@@ -23,4 +23,4 @@ Build on Andes:
 mpirun -np 1 ./build/solread-hdf5 <nZones> sol.cgns
 
 nZones can be found by running 'h5ls -r <cgns-file>' and looking at how many zones are in the file.
-For the small case that Norbert gave me, (sol.cgns), nZones = 803007
+For the small case that Norbert gave me, (sol.cgns), nZones = 5
