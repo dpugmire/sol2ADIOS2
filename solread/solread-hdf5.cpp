@@ -106,6 +106,7 @@ int main(int argc, char *argv[])
   adios2::Engine engine = io.Open(outFile, adios2::Mode::Write);
   engine.BeginStep();
 
+  int time = 0;
   for (auto &fname : fnames)
   {
     file_id = H5Fopen(fname.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
@@ -118,7 +119,6 @@ int main(int argc, char *argv[])
 
     nBytesRead += nZones * 2 * sizeof(int32_t);
 
-    int time = 0;
     for (size_t zone = nzStart + 1; zone < nzStart + nz + 1; ++zone)
     {
       std::string zonePath = "/hpMusic_base/hpMusic_Zone " + std::to_string(zone);
@@ -168,8 +168,6 @@ int main(int argc, char *argv[])
       for (std::size_t i = 0; i < nConn; i++)
         dataEC[i] -= 1;
 
-      //Write out the ADIOS.
-
       bool limitElems = false;
       std::vector<int64_t> connVec;
       if (limitElems)
@@ -181,6 +179,7 @@ int main(int argc, char *argv[])
           connVec.push_back(dataEC[offset+i]);
       }
 
+      //Write out the ADIOS.
       adios2::Variable<int64_t> varConn;
       adios2::Variable<double> varCoordsX, varCoordsY, varCoordsZ;
       GetADIOSVar(io, "ElementConnectivity", varConn, static_cast<std::size_t>(8*nElems));
@@ -204,13 +203,16 @@ int main(int argc, char *argv[])
         engine.Put<double>(var, ptrs[i]);
       }
 
-      adios2::Variable<int> varTime;
-      GetADIOSVar(io, "time", varTime, 1); //static_cast<std::size_t>(1));
-      engine.Put<int>(varTime, &time);
+      if (rank == 0)
+      {
+        adios2::Variable<int> varTime;
+        GetADIOSVar(io, "time", varTime, 1);
+        engine.Put<int>(varTime, &time);
+        time++;
+      }
+
 
       engine.EndStep();
-      time++;
-
 
       //free up memory.
       for (auto p : ptrs)
