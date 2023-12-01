@@ -118,6 +118,7 @@ int main(int argc, char *argv[])
 
     nBytesRead += nZones * 2 * sizeof(int32_t);
 
+    int time = 0;
     for (size_t zone = nzStart + 1; zone < nzStart + nz + 1; ++zone)
     {
       std::string zonePath = "/hpMusic_base/hpMusic_Zone " + std::to_string(zone);
@@ -131,7 +132,7 @@ int main(int argc, char *argv[])
       ReadVariable(rank, "Elem/ data", zoneGroupID, H5T_NATIVE_INT32, elemdata);
 
       const int32_t nNodes = data[0];
-      const int32_t nElems = data[1];
+      /*const*/ int32_t nElems = data[1];
 
       std::cout << "Rank " << rank << " Zone " << zone << " nElems = " << nElems << " nNodes = " << nNodes << std::endl;
 
@@ -162,7 +163,23 @@ int main(int argc, char *argv[])
         ReadVariable(rank, "FlowSolution/" + FlowVariables[i] + "/ data", zoneGroupID, H5T_NATIVE_DOUBLE, ptrs[i]);
       }
 
+      //convert connectivity to 0-based indexing
+      const std::size_t nConn = 8*nElems;
+      for (std::size_t i = 0; i < nConn; i++)
+        dataEC[i] -= 1;
+
       //Write out the ADIOS.
+
+      bool limitElems = false;
+      std::vector<int64_t> connVec;
+      if (limitElems)
+      {
+        nElems = 1;
+        int e0 = 1;
+        int offset = 8*e0;
+        for (int i = 0; i < 8; i++)
+          connVec.push_back(dataEC[offset+i]);
+      }
 
       adios2::Variable<int64_t> varConn;
       adios2::Variable<double> varCoordsX, varCoordsY, varCoordsZ;
@@ -170,7 +187,11 @@ int main(int argc, char *argv[])
       GetADIOSVar(io, "GridCoordinates/CoordinateX", varCoordsX, static_cast<std::size_t>(nNodes));
       GetADIOSVar(io, "GridCoordinates/CoordinateY", varCoordsY, static_cast<std::size_t>(nNodes));
       GetADIOSVar(io, "GridCoordinates/CoordinateZ", varCoordsZ, static_cast<std::size_t>(nNodes));
-      engine.Put<int64_t>(varConn, dataEC);
+      if (limitElems)
+        engine.Put<int64_t>(varConn, connVec.data());
+      else
+        engine.Put<int64_t>(varConn, dataEC);
+
       engine.Put<double>(varCoordsX, gcx);
       engine.Put<double>(varCoordsY, gcy);
       engine.Put<double>(varCoordsZ, gcz);
@@ -183,8 +204,12 @@ int main(int argc, char *argv[])
         engine.Put<double>(var, ptrs[i]);
       }
 
+      adios2::Variable<int> varTime;
+      GetADIOSVar(io, "time", varTime, 1); //static_cast<std::size_t>(1));
+      engine.Put<int>(varTime, &time);
 
       engine.EndStep();
+      time++;
 
 
       //free up memory.
