@@ -106,7 +106,7 @@ int main(int argc, char *argv[])
   adios2::Engine engine = io.Open(outFile, adios2::Mode::Write);
   engine.BeginStep();
 
-  int time = 0;
+  int timeStep = 0;
   for (auto &fname : fnames)
   {
     file_id = H5Fopen(fname.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
@@ -132,7 +132,7 @@ int main(int argc, char *argv[])
       ReadVariable(rank, "Elem/ data", zoneGroupID, H5T_NATIVE_INT32, elemdata);
 
       const int32_t nNodes = data[0];
-      /*const*/ int32_t nElems = data[1];
+      const int32_t nElems = data[1];
 
       std::cout << "Rank " << rank << " Zone " << zone << " nElems = " << nElems << " nNodes = " << nNodes << std::endl;
 
@@ -168,17 +168,6 @@ int main(int argc, char *argv[])
       for (std::size_t i = 0; i < nConn; i++)
         dataEC[i] -= 1;
 
-      bool limitElems = false;
-      std::vector<int64_t> connVec;
-      if (limitElems)
-      {
-        nElems = 1;
-        int e0 = 1;
-        int offset = 8*e0;
-        for (int i = 0; i < 8; i++)
-          connVec.push_back(dataEC[offset+i]);
-      }
-
       //Write out the ADIOS.
       adios2::Variable<int64_t> varConn;
       adios2::Variable<double> varCoordsX, varCoordsY, varCoordsZ;
@@ -186,11 +175,8 @@ int main(int argc, char *argv[])
       GetADIOSVar(io, "GridCoordinates/CoordinateX", varCoordsX, static_cast<std::size_t>(nNodes));
       GetADIOSVar(io, "GridCoordinates/CoordinateY", varCoordsY, static_cast<std::size_t>(nNodes));
       GetADIOSVar(io, "GridCoordinates/CoordinateZ", varCoordsZ, static_cast<std::size_t>(nNodes));
-      if (limitElems)
-        engine.Put<int64_t>(varConn, connVec.data());
-      else
-        engine.Put<int64_t>(varConn, dataEC);
 
+      engine.Put<int64_t>(varConn, dataEC);
       engine.Put<double>(varCoordsX, gcx);
       engine.Put<double>(varCoordsY, gcy);
       engine.Put<double>(varCoordsZ, gcz);
@@ -207,18 +193,15 @@ int main(int argc, char *argv[])
       {
         adios2::Variable<int> varTime;
         GetADIOSVar(io, "time", varTime, 1);
-        engine.Put<int>(varTime, &time);
-        time++;
+        engine.Put<int>(varTime, &timeStep);
+        timeStep++;
       }
-
 
       engine.EndStep();
 
       //free up memory.
       for (auto p : ptrs)
-      {
         free(p);
-      }
       free(dataEC);
       free(dataER);
       free(gcx);
