@@ -30,11 +30,12 @@ GetADIOSVar(adios2::IO& io, const std::string& varNm, adios2::Variable<T>& var, 
 {
   auto tmp = io.InquireVariable<T>(varNm);
   if (tmp)
+  {
     var = tmp;
+    var.SetSelection({{},{sz}});
+  }
   else
     var = io.DefineVariable<T>(varNm, {}, {}, {sz});
-
-  std::cout<<"GET_VAR: "<<varNm<<" sz= "<<sz<<std::endl;
 }
 
 bool ReadVariable(int rank, const std::string &name, hid_t &hfile, hid_t memtype, void *data)
@@ -104,11 +105,12 @@ int main(int argc, char *argv[])
   adios2::ADIOS adios(MPI_COMM_WORLD);
   adios2::IO io = adios.DeclareIO("io");
   adios2::Engine engine = io.Open(outFile, adios2::Mode::Write);
-  engine.BeginStep();
 
   int timeStep = 0;
   for (auto &fname : fnames)
   {
+    engine.BeginStep();
+
     file_id = H5Fopen(fname.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
 
     if (!rank)
@@ -119,6 +121,7 @@ int main(int argc, char *argv[])
 
     nBytesRead += nZones * 2 * sizeof(int32_t);
 
+    bool firstIteration = true;
     for (size_t zone = nzStart + 1; zone < nzStart + nz + 1; ++zone)
     {
       std::string zonePath = "/hpMusic_base/hpMusic_Zone " + std::to_string(zone);
@@ -176,28 +179,26 @@ int main(int argc, char *argv[])
       GetADIOSVar(io, "GridCoordinates/CoordinateY", varCoordsY, static_cast<std::size_t>(nNodes));
       GetADIOSVar(io, "GridCoordinates/CoordinateZ", varCoordsZ, static_cast<std::size_t>(nNodes));
 
-      engine.Put<int64_t>(varConn, dataEC);
-      engine.Put<double>(varCoordsX, gcx);
-      engine.Put<double>(varCoordsY, gcy);
-      engine.Put<double>(varCoordsZ, gcz);
+      engine.Put<int64_t>(varConn, dataEC, adios2::Mode::Sync);
+      engine.Put<double>(varCoordsX, gcx, adios2::Mode::Sync);
+      engine.Put<double>(varCoordsY, gcy, adios2::Mode::Sync);
+      engine.Put<double>(varCoordsZ, gcz, adios2::Mode::Sync);
 
       for (int i = 0; i < FlowVariables.size(); i++)
       {
         adios2::Variable<double> var;
         std::string varNm = "FlowSolution/" + FlowVariables[i];
         GetADIOSVar(io, varNm, var, nNodes);
-        engine.Put<double>(var, ptrs[i]);
+        engine.Put<double>(var, ptrs[i], adios2::Mode::Sync);
       }
 
-      if (rank == 0)
+      if (rank == 0 && firstIteration)
       {
         adios2::Variable<int> varTime;
         GetADIOSVar(io, "time", varTime, 1);
-        engine.Put<int>(varTime, &timeStep);
+        engine.Put<int>(varTime, &timeStep, adios2::Mode::Sync);
         timeStep++;
       }
-
-      engine.EndStep();
 
       //free up memory.
       for (auto p : ptrs)
@@ -209,7 +210,9 @@ int main(int argc, char *argv[])
       free(gcz);
 
       status = H5Gclose(zoneGroupID);
+      firstIteration = false;
     }
+    engine.EndStep();
     status = H5Fclose(file_id);
   }
 
