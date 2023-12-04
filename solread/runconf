@@ -1,4 +1,0 @@
-ADIOS2_DIR=/opt/adios2
-HDF5_DIR=/opt/hdf5-parallel/default
-
-cmake .. -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH="${ADIOS2_DIR};${HDF5_DIR}"
