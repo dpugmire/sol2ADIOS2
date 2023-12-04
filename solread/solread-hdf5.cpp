@@ -1,14 +1,13 @@
-#include <algorithm> // std::transform
 #include <chrono>
 #include <iomanip>
 #include <iostream>
-#include <thread> // sleep_for
 #include <vector>
 
 #include <hdf5.h>
 #include <adios2.h>
 
 #include <mpi.h>
+
 MPI_Comm comm;
 int rank = 0, nproc = 1;
 std::vector<std::string> fnames;
