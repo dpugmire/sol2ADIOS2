@@ -52,23 +52,19 @@ void ProcessArgs(int rank, int argc, char *argv[])
   if (argc > 2)
   {
     nZones = atoll(argv[1]);
-    int n = 2;
+    outFile = argv[2];
+    int n = 3;
     while (n < argc)
-    {
       fnames.push_back(argv[n++]);
-    }
   }
   else
   {
-    std::cout << "Usage: solread-adios N <sol1.bp> [<sol2.bp> .. <solk.bp>]\n"
-              << "    where N is the number of zones" << std::endl;
+    std::cout<<"Usage: solread-adios N outputFile <sol1.cgns> [<sol2.cgns> .. <solk.cgns>]"<<std::endl;
+    std::cout<<"  where N is the number of zones" << std::endl;
+    std::cout<<"  outputFile is the ADIOS file for output"<<std::endl;
+    std::cout<<"  sol1.cgns ... are the names of the input CGNS files"<<std::endl;
     MPI_Abort(comm, 1);
   }
-}
-
-std::string GetDatasetName(std::string &path1, size_t zone, std::string &path2)
-{
-  return path1 + " " + std::to_string(zone) + path2;
 }
 
 int main(int argc, char *argv[])
@@ -114,10 +110,7 @@ int main(int argc, char *argv[])
     file_id = H5Fopen(fname.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
 
     if (!rank)
-    {
-      std::cout << "File :" << fname << std::endl;
-      std::cout << "  Zones = " << nZones << std::endl;
-    }
+      std::cout<<"File :" << fname << " Zones= "<<nZones<<std::endl;
 
     nBytesRead += nZones * 2 * sizeof(int32_t);
 
@@ -125,13 +118,13 @@ int main(int argc, char *argv[])
     for (size_t zone = nzStart + 1; zone < nzStart + nz + 1; ++zone)
     {
       std::string zonePath = "/hpMusic_base/hpMusic_Zone " + std::to_string(zone);
-      std::cout << "  Open Group " << zonePath << std::endl;
+      //std::cout << "  Open Group " << zonePath << std::endl;
       hid_t zoneGroupID = H5Gopen2(file_id, zonePath.c_str(), H5P_DEFAULT);
       int32_t data[3];
-      std::cout << "  Read ' data' " << std::endl;
+      //std::cout << "  Read ' data' " << std::endl;
       ReadVariable(rank, " data", zoneGroupID, H5T_NATIVE_INT32, data);
       int32_t elemdata[2];
-      std::cout << "  Read 'Elem/ data' " << std::endl;
+      //std::cout << "  Read 'Elem/ data' " << std::endl;
       ReadVariable(rank, "Elem/ data", zoneGroupID, H5T_NATIVE_INT32, elemdata);
 
       const int32_t nNodes = data[0];
