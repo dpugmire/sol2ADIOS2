@@ -16,6 +16,13 @@ cmake \
 
 Build on Andes:
 
+module load hdf5
+
+cmake \
+ -DCMAKE_C_COMPILER:FILEPATH=/sw/andes/gcc/9.3.0/bin/gcc \
+ -DCMAKE_CXX_COMPILER:FILEPATH=/sw/andes/gcc/9.3.0/bin/g++ \
+ -DADIOS2_DIR=/ccs/home/pugmire/software/andes/adios2/2.9.2/install/lib64/cmake/adios2 \
+../solread
 
 
 # Running
