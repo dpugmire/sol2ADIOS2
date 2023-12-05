@@ -12,7 +12,7 @@ cmake \
  -DCMAKE_BUILD_TYPE=Debug \
  -DADIOS2_DIR=/apps/ADIOS/install_par/lib/cmake/adios2 \
  -DHDF5_DIR=/apps/hdf5/install \
-../solread
+../src
 
 Build on Andes:
 
@@ -22,7 +22,7 @@ cmake \
  -DCMAKE_C_COMPILER:FILEPATH=/sw/andes/gcc/9.3.0/bin/gcc \
  -DCMAKE_CXX_COMPILER:FILEPATH=/sw/andes/gcc/9.3.0/bin/g++ \
  -DADIOS2_DIR=/ccs/home/pugmire/software/andes/adios2/2.9.2/install/lib64/cmake/adios2 \
-../solread
+../src
 
 
 # Running
@@ -31,3 +31,15 @@ mpirun -np 1 ./build/solread-hdf5 <nZones> sol.cgns
 
 nZones can be found by running 'h5ls -r <cgns-file>' and looking at how many zones are in the file.
 For the small case that Norbert gave me, (sol.cgns), nZones = 5
+
+
+Andes:
+
+#!/bin/bash
+#SBATCH -A CFD164
+#SBATCH -J cgns_convert
+#SBATCH -N 5
+#SBATCH -t 0:30:00
+
+date
+srun -n 5 ./cgns2adios 5 output.bp ./data/sol.cgns
