@@ -5,6 +5,7 @@
 
 #include <hdf5.h>
 #include <adios2.h>
+#include <stdexcept>
 
 #include <mpi.h>
 
@@ -37,12 +38,16 @@ GetADIOSVar(adios2::IO& io, const std::string& varNm, adios2::Variable<T>& var, 
     var = io.DefineVariable<T>(varNm, {}, {}, {sz});
 }
 
-bool ReadVariable(int rank, const std::string &name, hid_t &hfile, hid_t memtype, void *data)
+bool ReadVariable(int rank, const std::string& zoneName, const std::string &name, hid_t &hfile, hid_t memtype, void *data)
 {
   //std::cout << "  Open Dataset " << name << std::endl;
   hid_t dataset_id = H5Dopen2(hfile, name.c_str(), H5P_DEFAULT);
+  if (dataset_id == H5I_INVALID_HID)
+    throw std::runtime_error(std::string("H5Dopen2 fail: " + zoneName + " " + name));
   herr_t status = H5Dread(dataset_id, memtype, H5S_ALL, H5S_ALL, H5P_DEFAULT, data);
   status = H5Dclose(dataset_id);
+
+  throw std::runtime_error(std::string("H5Dopen2 fail: " + zoneName + " " + name));
   return true;
 }
 
@@ -121,10 +126,10 @@ int main(int argc, char *argv[])
       hid_t zoneGroupID = H5Gopen2(file_id, zonePath.c_str(), H5P_DEFAULT);
       int32_t data[3];
       //std::cout << "  Read ' data' " << std::endl;
-      ReadVariable(rank, " data", zoneGroupID, H5T_NATIVE_INT32, data);
+      ReadVariable(rank, zonePath, " data", zoneGroupID, H5T_NATIVE_INT32, data);
       int32_t elemdata[2];
       //std::cout << "  Read 'Elem/ data' " << std::endl;
-      ReadVariable(rank, "Elem/ data", zoneGroupID, H5T_NATIVE_INT32, elemdata);
+      ReadVariable(rank, zonePath, "Elem/ data", zoneGroupID, H5T_NATIVE_INT32, elemdata);
 
       const int32_t nNodes = data[0];
       const int32_t nElems = data[1];
@@ -148,14 +153,14 @@ int main(int argc, char *argv[])
 
       nBytesRead += (ptrs.size() + 3) * nNodes * sizeof(int64_t);
 
-      ReadVariable(rank, "Elem/ElementConnectivity/ data", zoneGroupID, H5T_NATIVE_INT64, dataEC);
-      ReadVariable(rank, "Elem/ElementRange/ data", zoneGroupID, H5T_NATIVE_INT64, dataER);
-      ReadVariable(rank, "GridCoordinates/CoordinateX/ data", zoneGroupID, H5T_NATIVE_DOUBLE, gcx);
-      ReadVariable(rank, "GridCoordinates/CoordinateY/ data", zoneGroupID, H5T_NATIVE_DOUBLE, gcy);
-      ReadVariable(rank, "GridCoordinates/CoordinateZ/ data", zoneGroupID, H5T_NATIVE_DOUBLE, gcz);
+      ReadVariable(rank, zonePath, "Elem/ElementConnectivity/ data", zoneGroupID, H5T_NATIVE_INT64, dataEC);
+      ReadVariable(rank, zonePath, "Elem/ElementRange/ data", zoneGroupID, H5T_NATIVE_INT64, dataER);
+      ReadVariable(rank, zonePath, "GridCoordinates/CoordinateX/ data", zoneGroupID, H5T_NATIVE_DOUBLE, gcx);
+      ReadVariable(rank, zonePath, "GridCoordinates/CoordinateY/ data", zoneGroupID, H5T_NATIVE_DOUBLE, gcy);
+      ReadVariable(rank, zonePath, "GridCoordinates/CoordinateZ/ data", zoneGroupID, H5T_NATIVE_DOUBLE, gcz);
       for (int i = 0; i < FlowVariables.size(); ++i)
       {
-        ReadVariable(rank, "FlowSolution/" + FlowVariables[i] + "/ data", zoneGroupID, H5T_NATIVE_DOUBLE, ptrs[i]);
+        ReadVariable(rank, zonePath, "FlowSolution/" + FlowVariables[i] + "/ data", zoneGroupID, H5T_NATIVE_DOUBLE, ptrs[i]);
       }
 
       //convert connectivity to 0-based indexing
