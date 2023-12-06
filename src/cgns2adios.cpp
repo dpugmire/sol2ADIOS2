@@ -47,7 +47,6 @@ bool ReadVariable(int rank, const std::string& zoneName, const std::string &name
   herr_t status = H5Dread(dataset_id, memtype, H5S_ALL, H5S_ALL, H5P_DEFAULT, data);
   status = H5Dclose(dataset_id);
 
-  throw std::runtime_error(std::string("H5Dopen2 fail: " + zoneName + " " + name));
   return true;
 }
 
@@ -124,6 +123,9 @@ int main(int argc, char *argv[])
       std::string zonePath = "/hpMusic_base/hpMusic_Zone " + std::to_string(zone);
       //std::cout << "  Open Group " << zonePath << std::endl;
       hid_t zoneGroupID = H5Gopen2(file_id, zonePath.c_str(), H5P_DEFAULT);
+      if (zoneGroupID == H5I_INVALID_HID)
+        throw std::runtime_error(std::string("Zone H5Dopen2 fail: " + zonePath));
+
       int32_t data[3];
       //std::cout << "  Read ' data' " << std::endl;
       ReadVariable(rank, zonePath, " data", zoneGroupID, H5T_NATIVE_INT32, data);
