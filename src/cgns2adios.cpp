@@ -9,20 +9,15 @@
 
 #include <mpi.h>
 
-MPI_Comm comm;
-int rank = 0, nproc = 1;
-std::vector<std::string> fnames;
-size_t nZones = 0;
-std::string outFile = "output.bp";
 
-std::vector<std::string> FlowVariables = {"Density",   "Pressure",  "Q_CRITERIA", "SCHLIEREN", "VelocityX",
-                                           "VelocityY", "VelocityZ", "vort_x",     "vort_y",    "vort_z"};
-
-// std::vector<std::string> FlowVariables = {"Density", "Pressure", "CFL", "PHI", "VelocityX", "VelocityY", "VelocityZ"};
-
-//std::vector<std::string> FlowVariables = {"P_aver", "P_ms", "Rho_aver", "Rho_ms", "U_aver", "V_aver", "W_aver",
-//                                          "uu",     "uv",   "uw",       "vv",     "vw",     "ww"};
-
+struct State
+{
+  MPI_Comm comm;
+  int rank = 0, nproc = 1;
+  std::vector<std::string> fnames;
+  size_t nZones = 0;
+  std::string outFile = "output.bp";
+};
 
 template <typename T>
 void
@@ -45,20 +40,22 @@ bool ReadVariable(int rank, const std::string& zoneName, const std::string &name
   if (dataset_id == H5I_INVALID_HID)
     throw std::runtime_error(std::string("H5Dopen2 fail: " + zoneName + " " + name));
   herr_t status = H5Dread(dataset_id, memtype, H5S_ALL, H5S_ALL, H5P_DEFAULT, data);
-  status = H5Dclose(dataset_id);
+  if (status < 0)
+    throw std::runtime_error(std::string("H5read fail: " + zoneName + " " + name));
 
+  status = H5Dclose(dataset_id);
   return true;
 }
 
-void ProcessArgs(int rank, int argc, char *argv[])
+void ProcessArgs(State& state, int argc, char *argv[])
 {
   if (argc > 2)
   {
-    nZones = atoll(argv[1]);
-    outFile = argv[2];
+    state.nZones = atoll(argv[1]);
+    state.outFile = argv[2];
     int n = 3;
     while (n < argc)
-      fnames.push_back(argv[n++]);
+      state.fnames.push_back(argv[n++]);
   }
   else
   {
@@ -66,56 +63,82 @@ void ProcessArgs(int rank, int argc, char *argv[])
     std::cout<<"  where N is the number of zones" << std::endl;
     std::cout<<"  outputFile is the ADIOS file for output"<<std::endl;
     std::cout<<"  sol1.cgns ... are the names of the input CGNS files"<<std::endl;
-    MPI_Abort(comm, 1);
+    MPI_Abort(state.comm, 1);
   }
+}
+
+std::vector<std::string>
+ReadVariableNames(hid_t& fileID)
+{
+  std::vector<std::string> varNames;
+
+  //query all of the groups in zone 1 get to the variables names.
+  hid_t zoneGroupID = H5Gopen2(fileID, "/hpMusic_base/hpMusic_Zone 1/FlowSolution", H5P_DEFAULT);
+  hsize_t num;
+  H5Gget_num_objs(zoneGroupID, &num);
+  //std::cout<<"ReadVariableNames: "<<zoneGroupID<<" num= "<<num<<std::endl;
+  for (hsize_t i = 0; i < num; i++)
+  {
+    char buff[128];
+    size_t n;
+    H5Gget_objname_by_idx(zoneGroupID, i, buff, n);
+    varNames.push_back(buff);
+    //std::cout<<"  "<<i<<" "<<buff<<std::endl;
+  }
+
+  return varNames;
 }
 
 int main(int argc, char *argv[])
 {
+  State state;
+
   MPI_Init(&argc, &argv);
-  comm = MPI_COMM_WORLD;
-  MPI_Comm_rank(comm, &rank);
-  MPI_Comm_size(comm, &nproc);
+  state.comm = MPI_COMM_WORLD;
+  MPI_Comm_rank(state.comm, &state.rank);
+  MPI_Comm_size(state.comm, &state.nproc);
 
-  hid_t file_id, dataset_id; /* identifiers */
-  herr_t status;
-
-  ProcessArgs(rank, argc, argv);
+  ProcessArgs(state, argc, argv);
 
   // nz: number of zones process by one process
   // process zones: nzStart .. nzStart + nz - 1
-  size_t nz = nZones / nproc;
-  size_t rem = nZones - (nz * nproc);
-  size_t nzStart = rank * nz;
-  if (rank < rem)
+  size_t nz = state.nZones / state.nproc;
+  size_t rem = state.nZones - (nz * state.nproc);
+  size_t nzStart = state.rank * nz;
+  if (state.rank < rem)
   {
-    nzStart += rank;
+    nzStart += state.rank;
     ++nz;
   }
   else
-  {
     nzStart += rem;
-  }
-  std::cout << "Rank " << rank << " reads zones " << nzStart << ".." << nzStart + nz - 1 << std::endl;
+
+  std::cout << "Rank " << state.rank << " reads zones " << nzStart << ".." << nzStart + nz - 1 << std::endl;
 
   double tstart = MPI_Wtime();
   size_t nBytesRead = 0;
 
   adios2::ADIOS adios(MPI_COMM_WORLD);
   adios2::IO io = adios.DeclareIO("io");
-  adios2::Engine engine = io.Open(outFile, adios2::Mode::Write);
+  adios2::Engine engine = io.Open(state.outFile, adios2::Mode::Write);
 
   int timeStep = 0;
-  for (auto &fname : fnames)
+  std::vector<std::string> flowVariables;
+  for (auto &fname : state.fnames)
   {
     engine.BeginStep();
 
-    file_id = H5Fopen(fname.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+    hid_t file_id = H5Fopen(fname.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+    if (file_id == H5I_INVALID_HID)
+      throw std::runtime_error("File not found: " + fname);
 
-    if (!rank)
-      std::cout<<"File :" << fname << " Zones= "<<nZones<<std::endl;
+    if (timeStep == 0)
+      flowVariables = ReadVariableNames(file_id);
 
-    nBytesRead += nZones * 2 * sizeof(int32_t);
+    if (!state.rank)
+      std::cout<<"File :" << fname << " Zones= "<<state.nZones<<std::endl;
+
+    nBytesRead += state.nZones * 2 * sizeof(int32_t);
 
     bool firstIteration = true;
     for (size_t zone = nzStart + 1; zone < nzStart + nz + 1; ++zone)
@@ -127,16 +150,14 @@ int main(int argc, char *argv[])
         throw std::runtime_error(std::string("Zone H5Dopen2 fail: " + zonePath));
 
       int32_t data[3];
-      //std::cout << "  Read ' data' " << std::endl;
-      ReadVariable(rank, zonePath, " data", zoneGroupID, H5T_NATIVE_INT32, data);
+      ReadVariable(state.rank, zonePath, " data", zoneGroupID, H5T_NATIVE_INT32, data);
       int32_t elemdata[2];
-      //std::cout << "  Read 'Elem/ data' " << std::endl;
-      ReadVariable(rank, zonePath, "Elem/ data", zoneGroupID, H5T_NATIVE_INT32, elemdata);
+      ReadVariable(state.rank, zonePath, "Elem/ data", zoneGroupID, H5T_NATIVE_INT32, elemdata);
 
       const int32_t nNodes = data[0];
       const int32_t nElems = data[1];
 
-      std::cout << "Rank " << rank << " Zone " << zone << " nElems = " << nElems << " nNodes = " << nNodes << std::endl;
+      std::cout << "Rank " << state.rank << " Zone " << zone << " nElems = " << nElems << " nNodes = " << nNodes << std::endl;
 
       int64_t *dataEC = static_cast<int64_t *>(malloc(nElems * 8 * sizeof(int64_t)));
       nBytesRead += nElems * 8 * sizeof(int64_t);
@@ -144,7 +165,7 @@ int main(int argc, char *argv[])
       nBytesRead += 2 * sizeof(int64_t);
 
       std::vector<double *> ptrs;
-      for (auto &fv : FlowVariables)
+      for (auto &fv : flowVariables)
       {
         double *ptr = static_cast<double *>(malloc(nNodes * sizeof(double)));
         ptrs.push_back(ptr);
@@ -155,14 +176,14 @@ int main(int argc, char *argv[])
 
       nBytesRead += (ptrs.size() + 3) * nNodes * sizeof(int64_t);
 
-      ReadVariable(rank, zonePath, "Elem/ElementConnectivity/ data", zoneGroupID, H5T_NATIVE_INT64, dataEC);
-      ReadVariable(rank, zonePath, "Elem/ElementRange/ data", zoneGroupID, H5T_NATIVE_INT64, dataER);
-      ReadVariable(rank, zonePath, "GridCoordinates/CoordinateX/ data", zoneGroupID, H5T_NATIVE_DOUBLE, gcx);
-      ReadVariable(rank, zonePath, "GridCoordinates/CoordinateY/ data", zoneGroupID, H5T_NATIVE_DOUBLE, gcy);
-      ReadVariable(rank, zonePath, "GridCoordinates/CoordinateZ/ data", zoneGroupID, H5T_NATIVE_DOUBLE, gcz);
-      for (int i = 0; i < FlowVariables.size(); ++i)
+      ReadVariable(state.rank, zonePath, "Elem/ElementConnectivity/ data", zoneGroupID, H5T_NATIVE_INT64, dataEC);
+      ReadVariable(state.rank, zonePath, "Elem/ElementRange/ data", zoneGroupID, H5T_NATIVE_INT64, dataER);
+      ReadVariable(state.rank, zonePath, "GridCoordinates/CoordinateX/ data", zoneGroupID, H5T_NATIVE_DOUBLE, gcx);
+      ReadVariable(state.rank, zonePath, "GridCoordinates/CoordinateY/ data", zoneGroupID, H5T_NATIVE_DOUBLE, gcy);
+      ReadVariable(state.rank, zonePath, "GridCoordinates/CoordinateZ/ data", zoneGroupID, H5T_NATIVE_DOUBLE, gcz);
+      for (int i = 0; i < flowVariables.size(); ++i)
       {
-        ReadVariable(rank, zonePath, "FlowSolution/" + FlowVariables[i] + "/ data", zoneGroupID, H5T_NATIVE_DOUBLE, ptrs[i]);
+        ReadVariable(state.rank, zonePath, "FlowSolution/" + flowVariables[i] + "/ data", zoneGroupID, H5T_NATIVE_DOUBLE, ptrs[i]);
       }
 
       //convert connectivity to 0-based indexing
@@ -183,15 +204,15 @@ int main(int argc, char *argv[])
       engine.Put<double>(varCoordsY, gcy, adios2::Mode::Sync);
       engine.Put<double>(varCoordsZ, gcz, adios2::Mode::Sync);
 
-      for (int i = 0; i < FlowVariables.size(); i++)
+      for (int i = 0; i < flowVariables.size(); i++)
       {
         adios2::Variable<double> var;
-        std::string varNm = "FlowSolution/" + FlowVariables[i];
+        std::string varNm = "FlowSolution/" + flowVariables[i];
         GetADIOSVar(io, varNm, var, nNodes);
         engine.Put<double>(var, ptrs[i], adios2::Mode::Sync);
       }
 
-      if (rank == 0 && firstIteration)
+      if (state.rank == 0 && firstIteration)
       {
         adios2::Variable<int> varTime;
         GetADIOSVar(io, "time", varTime, 1);
@@ -208,22 +229,22 @@ int main(int argc, char *argv[])
       free(gcy);
       free(gcz);
 
-      status = H5Gclose(zoneGroupID);
+      auto status = H5Gclose(zoneGroupID);
       firstIteration = false;
     }
     engine.EndStep();
-    status = H5Fclose(file_id);
+    auto status = H5Fclose(file_id);
   }
 
-  MPI_Barrier(comm);
+  MPI_Barrier(state.comm);
   double tend = MPI_Wtime();
-  size_t nbytes[nproc];
-  MPI_Gather(&nBytesRead, 1, MPI_LONG_LONG, nbytes, 1, MPI_LONG_LONG, 0, comm);
-  if (!rank)
+  size_t nbytes[state.nproc];
+  MPI_Gather(&nBytesRead, 1, MPI_LONG_LONG, nbytes, 1, MPI_LONG_LONG, 0, state.comm);
+  if (!state.rank)
   {
     std::cout << "Total time to read = " << tend - tstart << "s" << std::endl;
     size_t n = 0;
-    for (int i = 0; i < nproc; ++i)
+    for (int i = 0; i < state.nproc; ++i)
     {
       std::cout << "Rank " << i << " bytes read = " << nbytes[i] << std::endl;
       n += nbytes[i];
