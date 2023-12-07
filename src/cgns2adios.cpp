@@ -6,6 +6,8 @@
 #include <hdf5.h>
 #include <adios2.h>
 #include <stdexcept>
+#include <fstream>
+#include <iostream>
 
 #include <mpi.h>
 
@@ -16,8 +18,89 @@ struct State
   int rank = 0, nproc = 1;
   std::vector<std::string> fnames;
   size_t nZones = 0;
-  std::string outFile = "output.bp";
+  std::string outFile = "output";
+  std::string fidesFile = "output";
 };
+
+std::string quote(const std::string& str)
+{
+  return std::string("\"" + str + "\"");
+}
+std::string quotePair(const std::string& str1, const std::string& str2)
+{
+  return std::string(quote(str1) + " : " + quote(str2));
+}
+
+void DumpFides(const State& state, const std::vector<std::string>& flowVars)
+{
+  const std::string topo = \
+"  \"coordinate_system\" : {\n \
+    \"array\" : {\n \
+      \"array_type\" : \"composite\",\n \
+      \"x_array\" : {\n \
+        \"array_type\" : \"basic\",\n \
+        \"data_source\": \"source\",\n \
+        \"variable\" : \"GridCoordinates/CoordinateX\"\n \
+        },\n \
+      \"y_array\" : {\n \
+        \"array_type\" : \"basic\",\n \
+        \"data_source\": \"source\",\n \
+        \"variable\" : \"GridCoordinates/CoordinateY\"\n \
+        },\n \
+      \"z_array\" : {\n \
+        \"array_type\" : \"basic\",\n \
+        \"data_source\": \"source\",\n \
+        \"variable\" : \"GridCoordinates/CoordinateZ\"\n \
+        }\n \
+    }\n \
+  },\n \
+  \"cell_set\": {\n \
+    \"cell_set_type\" : \"single_type\",\n \
+    \"cell_type\" : \"hexahedron\",\n \
+    \"data_source\": \"source\",\n \
+    \"variable\" : \"ElementConnectivity\"\n \
+  },";
+
+
+  std::ofstream fout(state.fidesFile);
+  fout<<"{"<<std::endl;
+  fout<<" "<<quote("HPMUSIC")<<": {"<<std::endl;
+  fout<<"  "<<quote("data_sources")<<": ["<<std::endl;
+  fout<<"   {"<<std::endl;
+  fout<<"    "<<quotePair("name", "source")<<","<<std::endl;
+  fout<<"    "<<quotePair("filename_mode", "input")<<std::endl;
+  fout<<"   }"<<std::endl;
+  fout<<"  ],"<<std::endl;
+
+  fout<<topo<<std::endl;
+
+  fout<<"  \"fields\": ["<<std::endl;
+  for (std::size_t i = 0; i < flowVars.size(); i++)
+  {
+    auto v = flowVars[i];
+    fout<<"   {"<<std::endl;
+    fout<<"    "<<quotePair("name", v)<<","<<std::endl;
+    fout<<"    "<<quotePair("association", "points")<<","<<std::endl;
+    fout<<"    "<<quote("array")<<" : {"<<std::endl;
+    fout<<"     "<<quotePair("array_type", "basic")<<","<<std::endl;
+    fout<<"     "<<quotePair("data_source", "source")<<","<<std::endl;
+    fout<<"     "<<quotePair("variable", "FlowSolution/"+v)<<std::endl;
+    fout<<"    }"<<std::endl; //array
+    fout<<"   }";
+    if (i < flowVars.size()-1)
+      fout<<",";
+    fout<<std::endl;
+  }
+  fout<<"  ],"<<std::endl; //fields
+
+  fout<<"  "<<quote("step_information")<<": {"<<std::endl;
+  fout<<"   "<<quotePair("data_source", "source")<<","<<std::endl;
+  fout<<"   "<<quotePair("variable", "time")<<std::endl;
+  fout<<"  }"<<std::endl;
+
+  fout<<" }"<<std::endl; //HPMUSIC
+  fout<<"}"<<std::endl;  //begin
+}
 
 template <typename T>
 void
@@ -65,6 +148,9 @@ void ProcessArgs(State& state, int argc, char *argv[])
     std::cout<<"  sol1.cgns ... are the names of the input CGNS files"<<std::endl;
     MPI_Abort(state.comm, 1);
   }
+
+  state.fidesFile = state.outFile + ".json";
+  state.outFile = state.outFile + ".bp";
 }
 
 std::vector<std::string>
@@ -133,7 +219,10 @@ int main(int argc, char *argv[])
       throw std::runtime_error("File not found: " + fname);
 
     if (timeStep == 0)
+    {
       flowVariables = ReadVariableNames(file_id);
+      DumpFides(state, flowVariables);
+    }
 
     if (!state.rank)
       std::cout<<"File :" << fname << " Zones= "<<state.nZones<<std::endl;
