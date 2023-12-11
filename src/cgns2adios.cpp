@@ -245,8 +245,14 @@ void ProcessArgs(State& state, int argc, char *argv[])
     }
     else if (state.args.find("--partFiles") != state.args.end())
     {
-      if (!CheckRequired(state, "--partFiles", state.nproc))
+      //Num ranks must be an integer multiple of num partfiles.
+      auto it = state.args.find("--partFiles");
+      size_t n = it->second.size();
+      if (state.nproc % n != 0)
+      {
+        std::cerr<<"Error. Number of ranks must be an integer multiple of the number of files."<<std::endl;
         valid = false;
+      }
     }
 
 
@@ -267,29 +273,6 @@ void ProcessArgs(State& state, int argc, char *argv[])
   }
 
   MPI_Barrier(state.comm);
-
-
-/*
-  if (argc > 2)
-  {
-    state.nZones = atoll(argv[1]);
-    state.outFile = argv[2];
-    int n = 3;
-    while (n < argc)
-      state.fnames.push_back(argv[n++]);
-  }
-  else
-  {
-    std::cout<<"Usage: solread-adios N outputFile <sol1.cgns> [<sol2.cgns> .. <solk.cgns>]"<<std::endl;
-    std::cout<<"  where N is the number of zones" << std::endl;
-    std::cout<<"  outputFile is the ADIOS file for output"<<std::endl;
-    std::cout<<"  sol1.cgns ... are the names of the input CGNS files"<<std::endl;
-    MPI_Abort(state.comm, 1);
-  }
-
-  //state.fidesFile = state.outFile + ".json";
-  //state.outFile = state.outFile + ".bp";
-  */
 }
 
 std::vector<int>
@@ -365,7 +348,12 @@ ReadParts(State& state)
 
   int timeStep = 0;
   size_t nBytesRead = 0;
-  auto fname = state.args["--partFiles"][state.rank];
+
+  int nFiles = state.args["--partFiles"].size();
+  int ranksPerFile = state.nproc / nFiles;
+  int fileIdx = state.rank / ranksPerFile;
+
+  auto fname = state.args["--partFiles"][fileIdx];
 
   double tstart = MPI_Wtime();
   engine.BeginStep();
@@ -380,9 +368,29 @@ ReadParts(State& state)
   DumpFides(state, flowVariables);
 
   int numZones = zones.size();
-  nBytesRead += numZones * 2 * sizeof(int32_t);
-  for (int zone : zones)
+  int zonesPerRank = numZones / ranksPerFile;
+  int nthRank = state.rank % ranksPerFile;
+  int zone0 = nthRank * zonesPerRank;
+  int zone1 = zone0 + zonesPerRank;
+  if (nthRank == ranksPerFile-1)
+    zone1 = numZones;
+
+  /*
+  for (int r = 0; r < state.nproc; r++)
   {
+    if (r == state.rank)
+    {
+      std::cout<<"Rank: "<<r<<": fileIdx= "<<fileIdx<<" nZones= "<<numZones<<" DoZones: "<<zone0<<" "<<zone1<<std::endl;
+    }
+    MPI_Barrier(state.comm);
+  }
+  MPI_Barrier(state.comm);
+  */
+
+  nBytesRead += numZones * 2 * sizeof(int32_t);
+  for (int zi = zone0; zi < zone1; zi++)
+  {
+    int zone = zones[zi];
     std::string zonePath = "/hpMusic_base/hpMusic_Zone " + std::to_string(zone);
     //std::cout << "  Open Group " << zonePath << std::endl;
     hid_t zoneGroupID = H5Gopen2(file_id, zonePath.c_str(), H5P_DEFAULT);
@@ -452,7 +460,7 @@ ReadParts(State& state)
       engine.Put<double>(var, ptrs[i], adios2::Mode::Sync);
     }
 
-    if (state.rank == 0)
+    if (state.rank == 0 && zi == zone0)
     {
       adios2::Variable<int> varTime;
       GetADIOSVar(io, "time", varTime, 1);
