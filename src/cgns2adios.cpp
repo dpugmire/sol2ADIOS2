@@ -11,7 +11,6 @@
 
 #include <mpi.h>
 
-
 struct State
 {
   MPI_Comm comm;
@@ -19,9 +18,26 @@ struct State
   int nproc = 1;
   std::string GetOutputFileName()
   {
-    std::string str;
+    std::string str = this->args["--output"][0];
+    return str + ".bp";
+  }
 
-    return str;
+  bool CheckRequired(const std::string& arg, int numOpts)
+  {
+    bool valid = true;
+    auto it = this->args.find(arg);
+    if (it == this->args.end())
+    {
+      if (this->rank == 0) std::cerr<<"Error. Argument missing: "<<arg<<std::endl;
+      valid = false;
+    }
+    else if (it->second.size() != numOpts)
+    {
+      if (this->rank == 0) std::cerr<<"Error. Argument "<<arg<<" requires "<<numOpts<<" values"<<std::endl;
+      valid = false;
+    }
+
+    return valid;
   }
 
   std::string GetOutputName()
@@ -43,7 +59,7 @@ struct State
     if (tmp.empty())
     {
       auto tmp = this->GetOutputName();
-      str = tmp.substr(0, tmp.size()-2) + "json";
+      str = tmp + ".json";
     }
     else
       str = tmp[0] + ".json";
@@ -51,6 +67,124 @@ struct State
     return true;
   }
 
+  void ProcessArgs(int argc, char* argv[])
+  {
+    this->args.clear();
+
+      std::string a0;
+      std::vector<std::string> a1;
+      for (int i = 1; i < argc; i++)
+      {
+        std::string tmp(argv[i]);
+        if (tmp.find("--") != std::string::npos)
+        {
+          if (!a0.empty())
+          {
+            this->args[a0] = a1;
+            a1.clear();
+          }
+
+          a0 = tmp;
+          continue;
+        }
+        else
+          a1.push_back(tmp);
+      }
+      //last argument.
+      if (!a0.empty())
+        this->args[a0] = a1;
+
+      /*
+        if (this->rank == 0)
+        {
+        std::cout<<"\n\nARGS\n";
+        for (const auto& it : this->args)
+        {
+        std::cout<<it.first<<" : {";
+        for (const auto& jt : it.second)
+        std::cout<<jt<<" ";
+        std::cout<<"}\n";
+        }
+        }
+      */
+      //validate the arguments.
+      std::cout<<std::endl;
+      auto requiredArgs = {"--output"};
+
+      bool valid = true;
+      for (const auto& a : requiredArgs)
+        if (!this->CheckRequired(a, 1))
+          valid = false;
+
+
+      //Check args for timestep mode.
+      if (this->args.find("--timeSteps") != this->args.end())
+      {
+        if (!this->CheckRequired("--numZones", 1))
+          valid = false;
+      }
+      else if (this->args.find("--partTextFile") != this->args.end())
+      {
+        auto it = this->args.find("--partTextFile");
+        if (it->second.size() != 1)
+        {
+          if (this->rank == 0) std::cerr<<"Error. No text file specified."<<std::endl;
+          valid = false;
+        }
+
+        std::string inputFile = it->second[0];
+        std::ifstream inFile;
+        inFile.open(inputFile);
+        std::string line;
+        while (std::getline(inFile, line))
+        {
+          this->PartsFiles.push_back(line);
+        }
+      }
+      else if (this->args.find("--partFiles") != this->args.end())
+      {
+        //Num ranks must be an integer multiple of num partfiles.
+        auto it = this->args.find("--partFiles");
+        this->PartsFiles = it->second;
+      }
+
+
+      if (this->PartsFiles.empty())
+      {
+        if (this->rank == 0) std::cerr<<"Error. No part files."<<std::endl;
+        valid = false;
+      }
+      else
+      {
+        size_t n = this->PartsFiles.size();
+        if (this->nproc % n != 0)
+        {
+          if (this->rank == 0) std::cerr<<"Error. Number of ranks must be an integer multiple of the number of files."<<std::endl;
+          valid = false;
+        }
+      }
+
+      if (!valid && this->rank == 0)
+      {
+        std::cout<<std::endl;
+        std::cout<<"Usage: There are two modes of usage."<<std::endl;
+        std::cout<<"  If all the data are in ONE file: "<<std::endl;
+        std::cout<<"  "<<argv[0]<<" --output <outputFile> --numZones <numZones> --timeSteps <list of files> [optional arguments]"<<std::endl;
+        std::cout<<std::endl;
+        std::cout<<"  If the data are in multiple files: "<<std::endl;
+        std::cout<<"  "<<argv[0]<<" --output <outputFile> --partFiles <list of files> [optional arguments]"<<std::endl;
+        std::cout<<"   ------ OR ------ if the part files are in a text file"<<std::endl;
+        std::cout<<"  "<<argv[0]<<" --output <outputFile> --partTextFiles <textFile> [optional arguments]"<<std::endl;
+        std::cout<<std::endl;
+        std::cout<<"   ** optional arguments: "<<std::endl;
+        std::cout<<"    --dumpFides <fidesFileName>  : Generate the fides JSON file.  If option not specified, it uses the outputFile"<<std::endl;
+
+        MPI_Abort(this->comm, 1);
+      }
+      MPI_Barrier(this->comm);
+  }
+
+  std::vector<std::string> PartsFiles;
   std::map<std::string, std::vector<std::string>> args;
 };
 
@@ -166,115 +300,6 @@ bool ReadVariable(int rank, const std::string& zoneName, const std::string &name
   return true;
 }
 
-bool CheckRequired(State& state, const std::string& arg, int numOpts)
-{
-  bool valid = true;
-  auto it = state.args.find(arg);
-  if (it == state.args.end())
-  {
-    std::cerr<<"Error. Argument missing: "<<arg<<std::endl;
-    valid = false;
-  }
-  else if (it->second.size() != numOpts)
-  {
-    std::cerr<<"Error. Argument "<<arg<<" requires "<<numOpts<<" values"<<std::endl;
-    valid = false;
-  }
-
-  return valid;
-}
-
-void ProcessArgs(State& state, int argc, char *argv[])
-{
-  state.args.clear();
-
-  std::string a0;
-  std::vector<std::string> a1;
-  for (int i = 1; i < argc; i++)
-  {
-    std::string tmp(argv[i]);
-    if (tmp.find("--") != std::string::npos)
-    {
-      if (!a0.empty())
-      {
-        state.args[a0] = a1;
-        a1.clear();
-      }
-
-      a0 = tmp;
-      continue;
-    }
-    else
-      a1.push_back(tmp);
-  }
-  //last argument.
-  if (!a0.empty())
-    state.args[a0] = a1;
-
-  /*
-  if (state.rank == 0)
-  {
-    std::cout<<"\n\nARGS\n";
-    for (const auto& it : state.args)
-    {
-      std::cout<<it.first<<" : {";
-      for (const auto& jt : it.second)
-        std::cout<<jt<<" ";
-      std::cout<<"}\n";
-    }
-  }
-  */
-
-  //validate the arguments.
-  if (state.rank == 0)
-  {
-    std::cout<<std::endl;
-    auto requiredArgs = {"--output"};
-
-    bool valid = true;
-    for (const auto& a : requiredArgs)
-      if (!CheckRequired(state, a, 1))
-        valid = false;
-
-
-    //Check args for timestep mode.
-    if (state.args.find("--timeSteps") != state.args.end())
-    {
-      if (!CheckRequired(state, "--numZones", 1))
-        valid = false;
-    }
-    else if (state.args.find("--partFiles") != state.args.end())
-    {
-      //Num ranks must be an integer multiple of num partfiles.
-      auto it = state.args.find("--partFiles");
-      size_t n = it->second.size();
-      if (state.nproc % n != 0)
-      {
-        std::cerr<<"Error. Number of ranks must be an integer multiple of the number of files."<<std::endl;
-        valid = false;
-      }
-    }
-
-
-    if (!valid)
-    {
-      std::cout<<std::endl;
-      std::cout<<"Usage: There are two modes of usage."<<std::endl;
-      std::cout<<"  If all the data are in ONE file: "<<std::endl;
-      std::cout<<"  "<<argv[0]<<" --output <outputFile> --numZones <numZones> --timeSteps <list of files> [optional arguments]"<<std::endl;
-      std::cout<<std::endl;
-      std::cout<<"  If the data are in multiple files: "<<std::endl;
-      std::cout<<"  "<<argv[0]<<" --output <outputFile> --partFiles <list of files> [optional arguments]"<<std::endl;
-      std::cout<<"   ** optional arguments: "<<std::endl;
-      std::cout<<"    --dumpFides <fidesFileName>  : Generate the fides JSON file.  If option not specified, it uses the outputFile"<<std::endl;
-
-      MPI_Abort(state.comm, 1);
-    }
-  }
-
-  MPI_Barrier(state.comm);
-}
-
 std::vector<int>
 GetZones(hid_t& fileID)
 {
@@ -286,7 +311,7 @@ GetZones(hid_t& fileID)
 
   hsize_t num;
   H5Gget_num_objs(zoneGroupID, &num);
-  std::cout<<"GetZones: "<<zoneGroupID<<" num= "<<num<<std::endl;
+  //std::cout<<"GetZones: "<<zoneGroupID<<" num= "<<num<<std::endl;
   for (hsize_t i = 0; i < num; i++)
   {
     char buff[256];
@@ -338,22 +363,20 @@ void
 ReadParts(State& state)
 {
   //move this to member data in state.
-  std::string outFile = state.args["--output"][0];
-  if (outFile.find("bp") == std::string::npos)
-    outFile = outFile + ".bp";
+  std::string outFile = state.GetOutputFileName();
 
-  adios2::ADIOS adios(MPI_COMM_WORLD);
+  adios2::ADIOS adios(state.comm);
   adios2::IO io = adios.DeclareIO("io");
   adios2::Engine engine = io.Open(outFile, adios2::Mode::Write);
 
   int timeStep = 0;
   size_t nBytesRead = 0;
 
-  int nFiles = state.args["--partFiles"].size();
+  int nFiles = state.PartsFiles.size();
   int ranksPerFile = state.nproc / nFiles;
   int fileIdx = state.rank / ranksPerFile;
 
-  auto fname = state.args["--partFiles"][fileIdx];
+  auto fname = state.PartsFiles[fileIdx];
 
   double tstart = MPI_Wtime();
   engine.BeginStep();
@@ -390,6 +413,7 @@ ReadParts(State& state)
   nBytesRead += numZones * 2 * sizeof(int32_t);
   for (int zi = zone0; zi < zone1; zi++)
   {
+
     int zone = zones[zi];
     std::string zonePath = "/hpMusic_base/hpMusic_Zone " + std::to_string(zone);
     //std::cout << "  Open Group " << zonePath << std::endl;
@@ -677,7 +701,7 @@ int main(int argc, char *argv[])
   MPI_Comm_rank(state.comm, &state.rank);
   MPI_Comm_size(state.comm, &state.nproc);
 
-  ProcessArgs(state, argc, argv);
+  state.ProcessArgs(argc, argv);
 
   //Read sequence of timesteps in files.
   if (state.args.find("--timeSteps") != state.args.end())
