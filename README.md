@@ -38,8 +38,12 @@ Andes:
 #!/bin/bash
 #SBATCH -A CFD164
 #SBATCH -J cgns_convert
-#SBATCH -N 5
-#SBATCH -t 0:30:00
+#SBATCH -N 16
+#SBATCH -t 0:20:00
 
 date
-srun -n 5 ./cgns2adios 5 output.bp ./data/sol.cgns
+srun -n 16 ./cgns2adios --dumpFides output_vki --output output_vki --partTextFile ./vki.txt
+
+
+
+## vti.txt contains the parts files, 1 per line.
