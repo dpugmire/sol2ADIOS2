@@ -206,17 +206,17 @@ void DumpFides(State& state, const std::vector<std::string>& flowVars)
       \"x_array\" : {\n \
         \"array_type\" : \"basic\",\n \
         \"data_source\": \"source\",\n \
-        \"variable\" : \"GridCoordinates/CoordinateX\"\n \
+        \"variable\" : \"/hpMusic_base/hpMusic_Zone/GridCoordinates/CoordinateX\"\n \
         },\n \
       \"y_array\" : {\n \
         \"array_type\" : \"basic\",\n \
         \"data_source\": \"source\",\n \
-        \"variable\" : \"GridCoordinates/CoordinateY\"\n \
+        \"variable\" : \"/hpMusic_base/hpMusic_Zone/GridCoordinates/CoordinateY\"\n \
         },\n \
       \"z_array\" : {\n \
         \"array_type\" : \"basic\",\n \
         \"data_source\": \"source\",\n \
-        \"variable\" : \"GridCoordinates/CoordinateZ\"\n \
+        \"variable\" : \"/hpMusic_base/hpMusic_Zone/GridCoordinates/CoordinateZ\"\n \
         }\n \
     }\n \
   },\n \
@@ -224,7 +224,7 @@ void DumpFides(State& state, const std::vector<std::string>& flowVars)
     \"cell_set_type\" : \"single_type\",\n \
     \"cell_type\" : \"hexahedron\",\n \
     \"data_source\": \"source\",\n \
-    \"variable\" : \"ElementConnectivity\"\n \
+    \"variable\" : \"/hpMusic_base/hpMusic_Zone/Elem/ElementConnectivity\"\n \
   },";
 
 
@@ -254,7 +254,7 @@ void DumpFides(State& state, const std::vector<std::string>& flowVars)
     fout<<"    "<<quote("array")<<" : {"<<std::endl;
     fout<<"     "<<quotePair("array_type", "basic")<<","<<std::endl;
     fout<<"     "<<quotePair("data_source", "source")<<","<<std::endl;
-    fout<<"     "<<quotePair("variable", "FlowSolution/"+v)<<std::endl;
+    fout<<"     "<<quotePair("variable", "/hpMusic_base/hpMusic_Zone/FlowSolution/"+v)<<std::endl;
     fout<<"    }"<<std::endl; //array
     fout<<"   }";
     if (i < flowVars.size()-1)
@@ -466,10 +466,10 @@ ReadParts(State& state)
     //Write out the ADIOS.
     adios2::Variable<int64_t> varConn;
     adios2::Variable<double> varCoordsX, varCoordsY, varCoordsZ;
-    GetADIOSVar(io, "ElementConnectivity", varConn, static_cast<std::size_t>(8*nElems));
-    GetADIOSVar(io, "GridCoordinates/CoordinateX", varCoordsX, static_cast<std::size_t>(nNodes));
-    GetADIOSVar(io, "GridCoordinates/CoordinateY", varCoordsY, static_cast<std::size_t>(nNodes));
-    GetADIOSVar(io, "GridCoordinates/CoordinateZ", varCoordsZ, static_cast<std::size_t>(nNodes));
+    GetADIOSVar(io, "/hpMusic_base/hpMusic_Zone/Elem/ElementConnectivity", varConn, static_cast<std::size_t>(8*nElems));
+    GetADIOSVar(io, "/hpMusic_base/hpMusic_Zone/GridCoordinates/CoordinateX", varCoordsX, static_cast<std::size_t>(nNodes));
+    GetADIOSVar(io, "/hpMusic_base/hpMusic_Zone/GridCoordinates/CoordinateY", varCoordsY, static_cast<std::size_t>(nNodes));
+    GetADIOSVar(io, "/hpMusic_base/hpMusic_Zone/GridCoordinates/CoordinateZ", varCoordsZ, static_cast<std::size_t>(nNodes));
 
     engine.Put<int64_t>(varConn, dataEC, adios2::Mode::Sync);
     engine.Put<double>(varCoordsX, gcx, adios2::Mode::Sync);
@@ -479,7 +479,7 @@ ReadParts(State& state)
     for (int i = 0; i < flowVariables.size(); i++)
     {
       adios2::Variable<double> var;
-      std::string varNm = "FlowSolution/" + flowVariables[i];
+      std::string varNm = "/hpMusic_base/hpMusic_Zone/FlowSolution/" + flowVariables[i];
       GetADIOSVar(io, varNm, var, nNodes);
       engine.Put<double>(var, ptrs[i], adios2::Mode::Sync);
     }
