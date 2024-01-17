@@ -148,6 +148,10 @@ struct State
         this->PartsFiles = it->second;
       }
 
+      if (this->args.find("--outputFloat") != this->args.end())
+      {
+        this->OutputDouble = false;
+      }
 
       if (this->PartsFiles.empty())
       {
@@ -178,6 +182,7 @@ struct State
         std::cout<<std::endl;
         std::cout<<"   ** optional arguments: "<<std::endl;
         std::cout<<"    --dumpFides <fidesFileName>  : Generate the fides JSON file.  If option not specified, it uses the outputFile"<<std::endl;
+        std::cout<<"    --outputFloat : Output results as 32 bit floats. Default is double"<<std::endl;
 
         MPI_Abort(this->comm, 1);
       }
@@ -186,6 +191,7 @@ struct State
 
   std::vector<std::string> PartsFiles;
   std::map<std::string, std::vector<std::string>> args;
+  bool OutputDouble = true;
 };
 
 std::string quote(const std::string& str)
@@ -360,6 +366,27 @@ ReadVariableNames(hid_t& fileID, int zone)
 }
 
 void
+ConvertAndWrite(adios2::Engine& engine, adios2::Variable<double> var, double* data, int /*n*/)
+{
+  std::cout<<"write: "<<var.Name()<<" DOUBLE"<<std::endl;
+  engine.Put<double>(var, data, adios2::Mode::Sync);
+}
+
+void
+ConvertAndWrite(adios2::Engine& engine, adios2::Variable<float> var, double* data, int n)
+{
+  std::cout<<"write: "<<var.Name()<<" FLOAT"<<std::endl;
+
+  float *data2 = static_cast<float *>(malloc(n * sizeof(float)));
+  for (int i = 0; i < n; i++)
+    data2[i] = static_cast<float>(data[i]);
+
+  engine.Put<float>(var, data2, adios2::Mode::Sync);
+  free(data2);
+}
+
+template <typename T>
+void
 ReadParts(State& state)
 {
   //move this to member data in state.
@@ -368,6 +395,25 @@ ReadParts(State& state)
   adios2::ADIOS adios(state.comm);
   adios2::IO io = adios.DeclareIO("io");
   adios2::Engine engine = io.Open(outFile, adios2::Mode::Write);
+
+  /*
+  const std::string imageData = R"(
+     <?xml version="1.0"?>
+     <VTKFile type="ImageData" version="0.1" byte_order="LittleEndian">
+       <ImageData WholeExtent= Origin="0 0 0" Spacing="1 1 1">
+         <Piece Extent=>
+           <CellData Scalars="U">
+               <DataArray Name="U" />
+               <DataArray Name="V" />
+               <DataArray Name="TIME">
+                 step
+               </DataArray>
+           </CellData>
+         </Piece>
+       </ImageData>
+     </VTKFile>)";
+  io.DefineAttribute<std::string>("vtk.xml", imageData);
+  */
 
   int timeStep = 0;
   size_t nBytesRead = 0;
@@ -397,6 +443,7 @@ ReadParts(State& state)
   int zone1 = zone0 + zonesPerRank;
   if (nthRank == ranksPerFile-1)
     zone1 = numZones;
+
 
   /*
   for (int r = 0; r < state.nproc; r++)
@@ -465,23 +512,24 @@ ReadParts(State& state)
 
     //Write out the ADIOS.
     adios2::Variable<int64_t> varConn;
-    adios2::Variable<double> varCoordsX, varCoordsY, varCoordsZ;
+    adios2::Variable<T> varCoordsX, varCoordsY, varCoordsZ;
+
     GetADIOSVar(io, "/hpMusic_base/hpMusic_Zone/Elem/ElementConnectivity", varConn, static_cast<std::size_t>(8*nElems));
     GetADIOSVar(io, "/hpMusic_base/hpMusic_Zone/GridCoordinates/CoordinateX", varCoordsX, static_cast<std::size_t>(nNodes));
     GetADIOSVar(io, "/hpMusic_base/hpMusic_Zone/GridCoordinates/CoordinateY", varCoordsY, static_cast<std::size_t>(nNodes));
     GetADIOSVar(io, "/hpMusic_base/hpMusic_Zone/GridCoordinates/CoordinateZ", varCoordsZ, static_cast<std::size_t>(nNodes));
 
     engine.Put<int64_t>(varConn, dataEC, adios2::Mode::Sync);
-    engine.Put<double>(varCoordsX, gcx, adios2::Mode::Sync);
-    engine.Put<double>(varCoordsY, gcy, adios2::Mode::Sync);
-    engine.Put<double>(varCoordsZ, gcz, adios2::Mode::Sync);
+    ConvertAndWrite(engine, varCoordsX, gcx, nNodes);
+    ConvertAndWrite(engine, varCoordsY, gcy, nNodes);
+    ConvertAndWrite(engine, varCoordsZ, gcz, nNodes);
 
     for (int i = 0; i < flowVariables.size(); i++)
     {
-      adios2::Variable<double> var;
+      adios2::Variable<T> var;
       std::string varNm = "/hpMusic_base/hpMusic_Zone/FlowSolution/" + flowVariables[i];
       GetADIOSVar(io, varNm, var, nNodes);
-      engine.Put<double>(var, ptrs[i], adios2::Mode::Sync);
+      ConvertAndWrite(engine, var, ptrs[i], nNodes);
     }
 
     if (state.rank == 0 && zi == zone0)
@@ -690,6 +738,21 @@ ReadTimesteps(State& state)
   }
 
   engine.Close();
+}
+
+void
+ReadParts(State& state)
+{
+  if (state.OutputDouble)
+  {
+    std::cout<<"ReadParts   DOUBLE"<<std::endl;
+    ReadParts<double>(state);
+  }
+  else
+  {
+    std::cout<<"ReadParts   FLOAT"<<std::endl;
+    ReadParts<float>(state);
+  }
 }
 
 int main(int argc, char *argv[])
