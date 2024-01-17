@@ -361,21 +361,20 @@ ReadVariableNames(hid_t& fileID, int zone)
     //std::cout<<"  "<<i<<" "<<buff<<std::endl;
   }
   auto status = H5Gclose(zoneGroupID);
-
   return varNames;
 }
 
 void
 ConvertAndWrite(adios2::Engine& engine, adios2::Variable<double> var, double* data, int /*n*/)
 {
-  std::cout<<"write: "<<var.Name()<<" DOUBLE"<<std::endl;
+  //std::cout<<"write: "<<var.Name()<<" DOUBLE"<<std::endl;
   engine.Put<double>(var, data, adios2::Mode::Sync);
 }
 
 void
 ConvertAndWrite(adios2::Engine& engine, adios2::Variable<float> var, double* data, int n)
 {
-  std::cout<<"write: "<<var.Name()<<" FLOAT"<<std::endl;
+  //std::cout<<"write: "<<var.Name()<<" FLOAT"<<std::endl;
 
   float *data2 = static_cast<float *>(malloc(n * sizeof(float)));
   for (int i = 0; i < n; i++)
