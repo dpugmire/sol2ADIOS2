@@ -108,7 +108,6 @@ struct State
         }
       */
       //validate the arguments.
-      std::cout<<std::endl;
       auto requiredArgs = {"--output"};
 
       bool valid = true;
@@ -361,26 +360,31 @@ ReadVariableNames(hid_t& fileID, int zone)
     //std::cout<<"  "<<i<<" "<<buff<<std::endl;
   }
   auto status = H5Gclose(zoneGroupID);
+
   return varNames;
 }
 
 void
 ConvertAndWrite(adios2::Engine& engine, adios2::Variable<double> var, double* data, int /*n*/)
 {
-  //std::cout<<"write: "<<var.Name()<<" DOUBLE"<<std::endl;
   engine.Put<double>(var, data, adios2::Mode::Sync);
 }
 
 void
-ConvertAndWrite(adios2::Engine& engine, adios2::Variable<float> var, double* data, int n)
+ConvertAndWrite(adios2::Engine& engine, adios2::Variable<int64_t> var, int64_t* data, int /*n*/)
 {
-  //std::cout<<"write: "<<var.Name()<<" FLOAT"<<std::endl;
+  engine.Put<int64_t>(var, data, adios2::Mode::Sync);
+}
 
-  float *data2 = static_cast<float *>(malloc(n * sizeof(float)));
+template <typename T, typename U>
+void
+ConvertAndWrite(adios2::Engine& engine, adios2::Variable<T> var, U* data, int n)
+{
+  T *data2 = static_cast<T *>(malloc(n * sizeof(T)));
   for (int i = 0; i < n; i++)
-    data2[i] = static_cast<float>(data[i]);
+    data2[i] = static_cast<T>(data[i]);
 
-  engine.Put<float>(var, data2, adios2::Mode::Sync);
+  engine.Put<T>(var, data2, adios2::Mode::Sync);
   free(data2);
 }
 
@@ -518,7 +522,7 @@ ReadParts(State& state)
     GetADIOSVar(io, "/hpMusic_base/hpMusic_Zone/GridCoordinates/CoordinateY", varCoordsY, static_cast<std::size_t>(nNodes));
     GetADIOSVar(io, "/hpMusic_base/hpMusic_Zone/GridCoordinates/CoordinateZ", varCoordsZ, static_cast<std::size_t>(nNodes));
 
-    engine.Put<int64_t>(varConn, dataEC, adios2::Mode::Sync);
+    ConvertAndWrite(engine, varConn, dataEC, nConn);
     ConvertAndWrite(engine, varCoordsX, gcx, nNodes);
     ConvertAndWrite(engine, varCoordsY, gcy, nNodes);
     ConvertAndWrite(engine, varCoordsZ, gcz, nNodes);
@@ -676,6 +680,7 @@ ReadTimesteps(State& state)
         dataEC[i] -= 1;
 
       //Write out the ADIOS.
+      //adios2::Variable<int64_t> varConn;
       adios2::Variable<int64_t> varConn;
       adios2::Variable<double> varCoordsX, varCoordsY, varCoordsZ;
       GetADIOSVar(io, "ElementConnectivity", varConn, static_cast<std::size_t>(8*nElems));
@@ -744,12 +749,10 @@ ReadParts(State& state)
 {
   if (state.OutputDouble)
   {
-    std::cout<<"ReadParts   DOUBLE"<<std::endl;
     ReadParts<double>(state);
   }
   else
   {
-    std::cout<<"ReadParts   FLOAT"<<std::endl;
     ReadParts<float>(state);
   }
 }
@@ -762,6 +765,21 @@ int main(int argc, char *argv[])
   state.comm = MPI_COMM_WORLD;
   MPI_Comm_rank(state.comm, &state.rank);
   MPI_Comm_size(state.comm, &state.nproc);
+
+  /*
+  if (state.rank == 0)
+  {
+    std::cout<<"***************************************"<<std::endl;
+    std::cout<<"int64_t: "<<sizeof(int64_t)<<std::endl;
+    std::cout<<"signed long long: "<<sizeof(signed long long)<<std::endl;
+    std::cout<<"long: "<<sizeof(long)<<std::endl;
+    std::cout<<"***************************************"<<std::endl;
+    bool b = std::is_same<int64_t, signed long long>();
+    std::cout<<"is_same<int64_t, signed long long>: "<<b<<std::endl;
+    b = std::is_same<int64_t, long>();
+    std::cout<<"is_same<int64_t, long>: "<<b<<std::endl;
+  }
+  */
 
   state.ProcessArgs(argc, argv);
 
