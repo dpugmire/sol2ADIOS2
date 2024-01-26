@@ -151,6 +151,10 @@ struct State
       {
         this->OutputDouble = false;
       }
+      if (this->args.find("--computeAxialVelocity") != this->args.end())
+      {
+        this->ComputeAxialVelocity = true;
+      }
 
       if (this->PartsFiles.empty())
       {
@@ -182,6 +186,7 @@ struct State
         std::cout<<"   ** optional arguments: "<<std::endl;
         std::cout<<"    --dumpFides <fidesFileName>  : Generate the fides JSON file.  If option not specified, it uses the outputFile"<<std::endl;
         std::cout<<"    --outputFloat : Output results as 32 bit floats. Default is double"<<std::endl;
+        std::cout<<"    --computeAxialVelocity : Compute and write out the axial velocity (RVZ / RHO)"<<std::endl;
 
         MPI_Abort(this->comm, 1);
       }
@@ -191,6 +196,7 @@ struct State
   std::vector<std::string> PartsFiles;
   std::map<std::string, std::vector<std::string>> args;
   bool OutputDouble = true;
+  bool ComputeAxialVelocity = false;
 };
 
 std::string quote(const std::string& str)
@@ -533,6 +539,31 @@ ReadParts(State& state)
       std::string varNm = "/hpMusic_base/hpMusic_Zone/FlowSolution/" + flowVariables[i];
       GetADIOSVar(io, varNm, var, nNodes);
       ConvertAndWrite(engine, var, ptrs[i], nNodes);
+    }
+
+    if (state.ComputeAxialVelocity)
+    {
+      double *RVZ = nullptr, *RHO = nullptr;
+      for (int i = 0; i < flowVariables.size(); i++)
+        if (flowVariables[i] == "RVZ")
+          RVZ = ptrs[i];
+        else if (flowVariables[i] == "RHO")
+          RHO = ptrs[i];
+
+      if (RVZ != nullptr && RHO != nullptr)
+      {
+        //compute the axial velocity...
+        double *axialVelocity = new double[nNodes];
+        for (int i = 0; i < nNodes; i++)
+          axialVelocity[i] = RVZ[i] / RHO[i];
+
+        adios2::Variable<T> var;
+        std::string varNm = "/hpMusic_base/hpMusic_Zone/FlowSolution/AxialVelocity";
+        GetADIOSVar(io, varNm, var, nNodes);
+        ConvertAndWrite(engine, var, axialVelocity, nNodes);
+
+        delete [] axialVelocity;
+      }
     }
 
     if (state.rank == 0 && zi == zone0)
